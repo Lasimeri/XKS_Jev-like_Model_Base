@@ -1,0 +1,24 @@
+XKS_Jev-like_Model_Base
+Copyright 2026 Lasimeri
+
+The prediction method, and the code that carries it (the prompt layouts in
+src/prompt.rs, the decode plan in src/engine.rs, the judge in src/judge.rs,
+the readout's exact path in src/readout.rs, the wire types in
+src/protocol.rs and the answer math in src/score.rs), are ported from
+Intel-Phi-Jev (https://github.com/Lasimeri/Intel-Phi-Jev, its `xks` and
+ARTICHOKE engine), which began as an import of jev-rs by Yijun Yu and
+contributors (https://github.com/yijunyu/jev-rs), used under the MIT license
+or the Apache License 2.0 (LICENSE-MIT, LICENSE-APACHE).
+
+The confidence formulas in src/score.rs and their test cases follow
+TypeSafe AI's system-one-adapter (MIT License, Copyright (c) 2026 TypeSafe
+AI).
+
+The request files under examples/ are Intel-Phi-Jev's examples.
+
+llama.cpp (https://github.com/ggml-org/llama.cpp, MIT License) is fetched at
+build time into third_party/ and linked statically; it is not part of this
+repository.
+
+This work is offered under the MIT license or the Apache License 2.0, at
+your option.

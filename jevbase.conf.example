@@ -1,0 +1,57 @@
+# jevbase settings. Copy to jevbase.conf (this directory) or
+# ~/.config/jevbase/jevbase.conf and uncomment what you change.
+# Later sources win: built-in defaults, ~/.config/jevbase/jevbase.conf,
+# ./jevbase.conf, -c FILE, JEVBASE_<KEY> variables, command-line flags.
+# `jevbase info` prints the effective values.
+
+# the GGUF model file
+# model = ~/models/Qwen3.8-2B-Distill/Qwen3.8-2B-Q8_0.gguf
+
+# CPU threads for llama.cpp
+# threads = 8
+
+# cache cells: the state plus one round of question suffixes
+# ctx = 16384
+
+# tokens per llama_decode
+# batch = 2048
+
+# tokens per physical step of a decode
+# ubatch = 512
+
+# questions decoded together, each on a copy of the state
+# forks = 15
+
+# rotations of a Choice's options averaged (position-bias control)
+# permutations = 3
+
+# letters (lettered options) | jev (answers in Jev's JSON form)
+# layout = letters
+
+# chat template: chatml | gemma | llama3 | raw
+# template = chatml
+
+# let llama.cpp repack weights into its interleaved CPU layouts
+# repack = false
+
+# flash attention: auto | on | off
+# flash_attn = auto
+
+# ram (read the weights into memory) | mmap (map the file)
+# load = ram
+
+# log-sum-exp: auto (avx2 when the CPU has AVX2+FMA) | avx2 | exact
+# readout = auto
+
+# answer temperature; temperature.<bucket> per bucket, e.g. temperature.choice:3-5
+# temperature = 1.0
+
+# address `jevbase serve` listens on
+# bind = 127.0.0.1:8097
+
+# add raw log-probabilities, tokens and latency to every answer
+# debug = false
+
+# show llama.cpp's informational log
+# verbose = false
+
