@@ -41,6 +41,13 @@ impl Field {
         self.scroll = 0;
     }
 
+    /// Cursor and view to the start of the text.
+    pub fn to_start(&mut self) {
+        self.row = 0;
+        self.col = 0;
+        self.scroll = 0;
+    }
+
     pub fn text(&self) -> String {
         self.lines
             .iter()

@@ -1,7 +1,7 @@
 //! `jevbase`: the command line.
 //!
 //!   jevbase                   the terminal interface (in a terminal)
-//!   jevbase tui [FILE]        the same, opening a request file
+//!   jevbase tui [FILE...]     the same, opening request files
 //!   jevbase ask [FILE...]     answer requests (.json: one; .jsonl: one a line)
 //!   jevbase serve             POST /v1/systemone over HTTP
 //!   jevbase bench [FILE...]   decisions per second, cold and warm
@@ -22,8 +22,10 @@ jevbase: Jev-like typed judgments (noul / choice / score) from a local LLM, on t
 usage: jevbase [options] [command] [args]
 
 commands:
-  (none), tui [FILE]  the terminal interface: edit a document and its questions,
-                      F5 asks; opens FILE, else examples/query.json when present
+  (none), tui [FILE...]
+                      the terminal interface: edit a document and its questions,
+                      F5 asks, Ctrl-N/P steps through the requests of the files
+                      (.json one, .jsonl one a line); default: examples/*
   ask [FILE...]       answer requests: a .json file is one request, a .jsonl file
                       one per line; no FILE or `-` reads standard input. Prints
                       one JSON response per request.
@@ -150,10 +152,10 @@ fn run(argv: &[String]) -> Result<ExitCode, String> {
     }
     match cli.command.as_str() {
         "tui" => {
-            let file = cli.args.first().map(Path::new);
+            let files: Vec<PathBuf> = cli.args.iter().map(PathBuf::from).collect();
             match cli.snapshot {
-                Some((w, h)) => print!("{}", tui::snapshot(&cfg, file, w, h, cli.snapshot_ask)?),
-                None => tui::run(&cfg, file)?,
+                Some((w, h)) => print!("{}", tui::snapshot(&cfg, &files, w, h, cli.snapshot_ask)?),
+                None => tui::run(&cfg, &files)?,
             }
             Ok(ExitCode::SUCCESS)
         }

@@ -334,17 +334,19 @@ pub fn draw(app: &mut App, w: usize, h: usize) -> Canvas {
     // Panes.
     let top = ((h - 3) * 9 / 20).max(5);
     let docw = w * 3 / 5;
-    let file = app
-        .file
-        .as_ref()
-        .map(|p| format!(" · {}", p.display()))
-        .unwrap_or_default();
+    let source = match app.set.get(app.at) {
+        Some((name, _)) if app.set.len() > 1 => {
+            format!(" · {name} ({}/{})", app.at + 1, app.set.len())
+        }
+        Some((name, _)) => format!(" · {name}"),
+        None => String::new(),
+    };
     c.frame(
         0,
         1,
         docw,
         top,
-        &format!("Document{file}"),
+        &format!("Document{source}"),
         app.pane == Pane::Document,
     );
     let (rows, cur) = app.doc.view(docw - 2, top - 2);
@@ -426,12 +428,14 @@ pub fn draw(app: &mut App, w: usize, h: usize) -> Canvas {
         (Mode::Path(..), _) => "Enter confirm · Esc cancel",
         (Mode::Help, _) => "any key closes the help",
         (_, Pane::Document) => {
-            "F5 ask · Tab panes · Ctrl-O open · Ctrl-S save · F1 help · Ctrl-Q quit"
+            "F5 ask · Ctrl-N/P next/prev request · Tab panes · Ctrl-O open · Ctrl-S save · F1 help · Ctrl-Q quit"
         }
         (_, Pane::Questions) => {
-            "F5 ask · a add · Enter edit · d remove · ↑/↓ select · Tab panes · Ctrl-Q quit"
+            "F5 ask · Ctrl-N/P next/prev request · a add · Enter edit · d remove · ↑/↓ select · Tab panes · Ctrl-Q quit"
         }
-        (_, Pane::Answers) => "F5 ask · ↑/↓ PgUp/PgDn scroll · Tab panes · Ctrl-Q quit",
+        (_, Pane::Answers) => {
+            "F5 ask · Ctrl-N/P next/prev request · ↑/↓ PgUp/PgDn scroll · Tab panes · Ctrl-Q quit"
+        }
     };
     let note_style = if app.note.contains(':') || app.note.starts_with("no ") {
         YELLOW
@@ -551,6 +555,7 @@ fn help(c: &mut Canvas) {
         "",
         "F5, Ctrl-R    ask every question (runs in the background)",
         "Tab, S-Tab    move between Document, Questions and Answers",
+        "Ctrl-N/P      next / previous request of the files opened",
         "a / Enter / d add, edit, remove a question (Questions pane)",
         "Ctrl-O        open a request file (the JSON `jevbase ask` takes)",
         "Ctrl-S        save the request to a file",

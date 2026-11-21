@@ -233,6 +233,11 @@ pub struct App {
     /// Model and CPU line for the header.
     pub model: String,
     pub file: Option<PathBuf>,
+    /// The requests opened (one per .json file, one per line of a .jsonl
+    /// file), each with where it came from; Ctrl-N / Ctrl-P step through.
+    pub set: Vec<(String, Request)>,
+    /// The request of `set` shown.
+    pub at: usize,
     judge: Option<Arc<Judge>>,
     tx: Sender<Event>,
     rx: Receiver<Event>,
@@ -275,6 +280,8 @@ impl App {
                 cfg.readout.name()
             ),
             file: None,
+            set: Vec::new(),
+            at: 0,
             judge: None,
             tx,
             rx,
@@ -298,22 +305,81 @@ impl App {
         })
     }
 
-    fn load(&mut self, path: &Path) -> Result<(), String> {
-        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let req: Request =
-            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    /// Open request files (a .json file is one request, a .jsonl file one a
+    /// line, `#` lines skipped) as the set Ctrl-N / Ctrl-P step through, and
+    /// show the first.
+    fn open(&mut self, paths: &[PathBuf]) -> Result<(), String> {
+        let mut set = Vec::new();
+        for path in paths {
+            let text =
+                std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            if let Ok(req) = serde_json::from_str::<Request>(&text) {
+                set.push((name, req));
+                continue;
+            }
+            for (n, line) in text.lines().enumerate() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                let req = serde_json::from_str::<Request>(line)
+                    .map_err(|e| format!("{}:{}: {e}", path.display(), n + 1))?;
+                set.push((format!("{name}:{}", n + 1), req));
+            }
+        }
+        if set.is_empty() {
+            return Err("no requests in those files".into());
+        }
+        self.set = set;
+        self.file = paths.first().cloned();
+        self.show(0)?;
+        self.note = if self.set.len() > 1 {
+            format!("{} requests loaded", self.set.len())
+        } else {
+            format!("opened {}", self.set[0].0)
+        };
+        Ok(())
+    }
+
+    /// Show request `i` of the set; edits to the one shown before are
+    /// dropped (Ctrl-S saves them first).
+    fn show(&mut self, i: usize) -> Result<(), String> {
+        let (_, req) = &self.set[i];
         let drafts = req
             .questions
             .iter()
             .map(|(id, q)| Draft::from_json(id, q))
             .collect::<Result<Vec<_>, _>>()?;
         self.doc.set(&crate::protocol::render_state(&req.state));
+        self.doc.to_start();
         self.drafts = drafts;
+        self.at = i;
         self.selected = 0;
         self.answered = None;
-        self.file = Some(path.to_path_buf());
-        self.note = format!("opened {}", path.display());
+        self.answers_scroll = 0;
         Ok(())
+    }
+
+    /// Step `by` requests through the set, wrapping around.
+    fn step(&mut self, by: isize) {
+        if self.set.len() < 2 {
+            self.note = "one request open: Ctrl-O opens a .jsonl file of many".into();
+            return;
+        }
+        if matches!(self.status, Status::Asking(_)) {
+            self.note = "wait for the answers before moving on".into();
+            return;
+        }
+        let n = self.set.len() as isize;
+        let i = ((self.at as isize + by) % n + n) % n;
+        match self.show(i as usize) {
+            Ok(()) => self.note.clear(),
+            Err(e) => self.note = e,
+        }
     }
 
     fn save(&mut self, path: &Path) -> Result<(), String> {
@@ -413,6 +479,8 @@ impl App {
     fn main_key(&mut self, k: Key) {
         match k {
             Key::F(5) | Key::Ctrl('r') => self.ask(),
+            Key::Ctrl('n') => self.step(1),
+            Key::Ctrl('p') => self.step(-1),
             Key::F(1) => self.mode = Mode::Help,
             Key::Tab | Key::BackTab => {
                 let forward = k == Key::Tab;
@@ -539,7 +607,7 @@ impl App {
             Key::Enter => {
                 let path = PathBuf::from(f.text().trim());
                 let r = match action {
-                    PathAction::Open => self.load(&path),
+                    PathAction::Open => self.open(&[path]),
                     PathAction::Save => self.save(&path),
                 };
                 if let Err(e) = r {
@@ -554,21 +622,37 @@ impl App {
     }
 }
 
-/// Start an app on `file` (or examples/query.json when it exists).
-fn start(cfg: &Config, file: Option<&Path>) -> Result<App, String> {
+/// The examples opened when no file is named, in this order, when present.
+const EXAMPLES: [&str; 4] = [
+    "examples/query.json",
+    "examples/wide_choice.jsonl",
+    "examples/long_sessions.jsonl",
+    "examples/dev_tasks.jsonl",
+];
+
+/// Start an app on `files`, or on the examples when none are named.
+fn start(cfg: &Config, files: &[PathBuf]) -> Result<App, String> {
     let mut app = App::new(cfg);
-    let default = Path::new("examples/query.json");
-    match file {
-        Some(f) => app.load(f)?,
-        None if default.is_file() => app.load(default)?,
-        None => app.note = "type the document, then Tab to Questions and `a` to add one".into(),
+    let files: Vec<PathBuf> = if files.is_empty() {
+        EXAMPLES
+            .iter()
+            .map(PathBuf::from)
+            .filter(|p| p.is_file())
+            .collect()
+    } else {
+        files.to_vec()
+    };
+    if files.is_empty() {
+        app.note = "type the document, then Tab to Questions and `a` to add one".into();
+    } else {
+        app.open(&files)?;
     }
     Ok(app)
 }
 
 /// Run the interface until Ctrl-Q.
-pub fn run(cfg: &Config, file: Option<&Path>) -> Result<(), String> {
-    let mut app = start(cfg, file)?;
+pub fn run(cfg: &Config, files: &[PathBuf]) -> Result<(), String> {
+    let mut app = start(cfg, files)?;
     let tx = app.tx.clone();
     let c = cfg.clone();
     std::thread::spawn(move || {
@@ -607,12 +691,12 @@ pub fn run(cfg: &Config, file: Option<&Path>) -> Result<(), String> {
 /// with `ask`, after loading the model and answering the request.
 pub fn snapshot(
     cfg: &Config,
-    file: Option<&Path>,
+    files: &[PathBuf],
     cols: usize,
     rows: usize,
     ask: bool,
 ) -> Result<String, String> {
-    let mut app = start(cfg, file)?;
+    let mut app = start(cfg, files)?;
     if ask {
         let judge = crate::open(cfg)?;
         let _ = app.tx.send(Event::Loaded(Ok(judge)));

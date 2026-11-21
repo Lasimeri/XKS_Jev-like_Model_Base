@@ -89,15 +89,19 @@ make install                                 # ~/.local/bin/jevbase
 
 ### The terminal interface
 
-`jevbase` in a terminal opens it on `examples/query.json` (or a file named
-on the command line). The document pane is the state; the questions pane
-lists the questions; **F5** (or Ctrl-R) asks them and the answers pane
-shows each answer with a bar per option. The model loads in the background
-while you edit.
+`jevbase` in a terminal opens it on the 31 example requests in
+`examples/` (or on the files named on the command line: a `.json` file is
+one request, a `.jsonl` file one per line). The document pane is the
+state; the questions pane lists the questions; **F5** (or Ctrl-R) asks them
+and the answers pane shows each answer with a bar per option, and the time,
+decisions per second and prompt tokens of the run in its title (ask twice:
+the second run reuses the cached state). **Ctrl-N** / **Ctrl-P** step to the
+next or previous request. The model loads in the background while you edit.
 
 | key | where | does |
 |---|---|---|
 | F5, Ctrl-R | anywhere | ask every question |
+| Ctrl-N, Ctrl-P | anywhere | next / previous request of the files opened |
 | Tab, Shift-Tab | anywhere | move between Document, Questions, Answers |
 | a, Enter, d | Questions | add, edit, remove a question |
 | Ctrl-O, Ctrl-S | anywhere | open, save a request file (the JSON `ask` takes) |
