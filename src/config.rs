@@ -74,6 +74,11 @@ pub const KEYS: &[(&str, &str, &str)] = &[
         "address `jevbase serve` listens on",
     ),
     (
+        "api_keys",
+        "",
+        "comma-separated keys `serve` requires as `Authorization: Bearer KEY` (empty: none)",
+    ),
+    (
         "debug",
         "false",
         "add raw log-probabilities, tokens and latency to every answer",
@@ -98,6 +103,8 @@ pub struct Config {
     pub readout: Readout,
     pub calibration: Calibration,
     pub bind: String,
+    /// Bearer keys `serve` requires (none: it answers anyone who can reach it).
+    pub api_keys: Vec<String>,
     pub debug: bool,
     pub verbose: bool,
     /// The settings files that were read, in order.
@@ -123,6 +130,7 @@ impl Config {
             readout: Readout::Exact,
             calibration: Calibration::default(),
             bind: String::new(),
+            api_keys: Vec::new(),
             debug: false,
             verbose: false,
             sources: Vec::new(),
@@ -211,6 +219,14 @@ impl Config {
             "readout" => self.readout = v.parse()?,
             "temperature" => self.calibration.default = temperature(v)?,
             "bind" => self.bind = v.to_string(),
+            "api_keys" => {
+                self.api_keys = v
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|k| !k.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            }
             "debug" => self.debug = boolean(key, v)?,
             "verbose" => self.verbose = boolean(key, v)?,
             _ => match key.strip_prefix("temperature.") {
@@ -292,6 +308,7 @@ impl Config {
             ("readout", self.readout.name().into()),
             ("temperature", temps),
             ("bind", self.bind.clone()),
+            ("api_keys", format!("{} set", self.api_keys.len())),
             ("debug", self.debug.to_string()),
         ]
     }

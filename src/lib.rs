@@ -12,6 +12,7 @@
 //! - [`prompt`]: questions rendered as prompts whose next token is the answer.
 //! - [`readout`]: log-sum-exp over the vocabulary (exact, or AVX2 + FMA).
 //! - [`score`]: softmax, temperature, confidence, expected level.
+//! - [`validate`]: requests checked against TypeSafe's documented schema.
 //!
 //! With the `engine` feature (the default; llama.cpp linked statically):
 //! - [`engine`]: llama.cpp in process; prefill, forks, trie, readout.
@@ -25,6 +26,7 @@ pub mod prompt;
 pub mod protocol;
 pub mod readout;
 pub mod score;
+pub mod validate;
 
 #[cfg(feature = "engine")]
 pub mod config;

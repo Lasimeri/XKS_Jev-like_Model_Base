@@ -289,7 +289,9 @@ impl App {
         }
     }
 
-    /// The request the panes describe.
+    /// The request the panes describe, naming the model the opened request
+    /// named (else the SDKs' default alias), so a saved file is one any
+    /// System One server accepts.
     pub fn request(&self) -> Result<Request, String> {
         if self.drafts.is_empty() {
             return Err("no questions: press `a` in the Questions pane to add one".into());
@@ -298,8 +300,13 @@ impl App {
         for d in &self.drafts {
             questions.insert(d.id.clone(), d.to_json()?);
         }
+        let model = self
+            .set
+            .get(self.at)
+            .and_then(|(_, r)| r.model.clone())
+            .unwrap_or_else(|| crate::client::Client::DEFAULT_MODEL.to_string());
         Ok(Request {
-            model: None,
+            model: Some(model),
             state: Value::String(self.doc.text()),
             questions,
         })

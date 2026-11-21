@@ -163,7 +163,7 @@ fn run(argv: &[String]) -> Result<ExitCode, String> {
         "ask" => ask(&cfg, &cli.args),
         "serve" => {
             let judge = open(&cfg)?;
-            server::serve(&judge, &cfg.bind, |addr| {
+            server::serve(&judge, &cfg.bind, &cfg.api_keys, |addr| {
                 eprintln!("jevbase: serving POST http://{addr}/v1/systemone (Ctrl-C stops)")
             })?;
             Ok(ExitCode::SUCCESS)

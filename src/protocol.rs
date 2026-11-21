@@ -1,19 +1,25 @@
-//! Wire types of the System One request and response, byte-compatible with
-//! TypeSafe's `POST /v1/systemone` (and so with Intel-Phi-Jev's `xks` and
-//! Mechanical Jev's `mjev`).
+//! Wire types of the System One request and response, as TypeSafe documents
+//! `POST /v1/systemone` (OpenAPI 0.2.0, https://docs.typesafe.ai/api/system-one,
+//! read 2026-11-21), so TypeSafe's SDKs, Intel-Phi-Jev's `xks` and Mechanical
+//! Jev's `mjev` talk to this crate's server and client unchanged.
 //!
-//! A request is a `state` (free text, or any JSON rendered as pretty JSON)
-//! and named typed questions: `noul` (yes/no), `choice` (one of N named
-//! options) and `score` (a level on an ordered scale of 2 to 10).
+//! A request is a `model` (a name or alias), a `state` (free text, or any
+//! JSON, rendered as pretty JSON) and named typed questions: `noul` (yes/no),
+//! `choice` (one of 1 to 255 named options) and `score` (a level on an
+//! ordered scale of 1 to 10). `instructions` is optional on every question.
+//! The wire's `box` questions and image `assets` need a vision model; the
+//! server refuses them (`validate`).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// A request: the situation (`state`) plus named typed questions.
+/// A request: the model asked for, the situation (`state`) and named typed
+/// questions.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Request {
-    /// Model alias. Accepted and echoed back; the model is the loaded one.
-    #[serde(default)]
+    /// Model name or alias (required on the wire; `validate` checks it).
+    /// A client fills its default when it is None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// Free text, or any JSON object or array (rendered as pretty JSON).
     pub state: Value,
@@ -27,28 +33,31 @@ pub struct Request {
 pub enum Question {
     /// Yes/no ("noul" is TypeSafe's name for the primitive).
     Noul {
+        #[serde(default)]
         instructions: Value,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         criteria: Option<NoulCriteria>,
     },
     /// One of N named options; each value is an optional description.
     Choice {
+        #[serde(default)]
         instructions: Value,
         criteria: Map<String, Value>,
     },
     /// An ordered scale; `criteria[i]` describes level `i`.
     Score {
+        #[serde(default)]
         instructions: Value,
         criteria: Vec<Value>,
     },
 }
 
-/// What `true` and `false` mean for a Noul, when the request says.
+/// What `true` and `false` mean for a Noul (each optional).
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct NoulCriteria {
-    #[serde(rename = "true")]
+    #[serde(rename = "true", default)]
     pub is_true: Value,
-    #[serde(rename = "false")]
+    #[serde(rename = "false", default)]
     pub is_false: Value,
 }
 
@@ -130,8 +139,8 @@ pub fn parse_questions(raw: &Map<String, Value>) -> Result<Vec<(String, Question
             Question::Choice { criteria, .. } if criteria.is_empty() => {
                 return Err(format!("question `{id}`: choice needs at least one option"));
             }
-            Question::Score { criteria, .. } if criteria.len() < 2 || criteria.len() > 10 => {
-                return Err(format!("question `{id}`: score needs 2 to 10 levels"));
+            Question::Score { criteria, .. } if criteria.is_empty() || criteria.len() > 10 => {
+                return Err(format!("question `{id}`: score needs 1 to 10 levels"));
             }
             _ => {}
         }

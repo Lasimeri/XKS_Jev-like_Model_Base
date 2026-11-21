@@ -117,10 +117,12 @@ optional `true: ...` and `false: ...` for a noul.
 
 The wire format is TypeSafe's System One (`POST /v1/systemone`), the one
 `xks`, Mechanical Jev (`mjev`) and TypeSafe's SDKs speak. A request is a
-`state` and named `questions`; see [`examples/query.json`](examples/query.json):
+`model`, a `state` and named `questions`; see
+[`examples/query.json`](examples/query.json):
 
 ```json
 {
+  "model": "jev-latest",
   "state": "$ cargo clean && rm -rf ~/.cargo/registry && cargo build --release",
   "questions": {
     "class":   {"type": "choice", "instructions": "What kind of command is this?",
@@ -135,6 +137,35 @@ The wire format is TypeSafe's System One (`POST /v1/systemone`), the one
 
 `--debug` (or `debug = true`) adds each question's raw log-probabilities,
 tokens evaluated and cached, label mass and latency.
+
+## Compatibility with TypeSafe's Jev
+
+`jevbase serve` follows TypeSafe's documentation of the System One API
+([OpenAPI 0.2.0](https://docs.typesafe.ai/api/system-one),
+[models and limits](https://docs.typesafe.ai/models), read 2026-11-21), so a
+client written for the hosted Jev works against it, and a client of it works
+against the hosted Jev:
+
+| | |
+|---|---|
+| request | `model`, `state`, `questions` required; `instructions` optional; noul / choice (1 to 255 options) / score (1 to 10 levels) |
+| models | `GET /v1/models`: `{"models": [{name, description, release_date}]}` with the aliases `jev-latest` and `jev-preview`; any versioned `jev-` id is accepted too; the response's `model` names the model that answered (an OpenAI-style `data` list sits beside it for Mechanical Jev) |
+| 422 | the body is not JSON or not the schema: `{"detail": [{loc, msg, type, input, ctx}]}` (pydantic's error types) |
+| 400 | valid but not servable here: `{"detail": "..."}` for image `assets` and `box` questions (this model reads text only), an unknown model, a request past the context limits |
+| 403 / 401 | with `api_keys` set (`--set api_keys=KEY1,KEY2`): no key / a wrong key, `{"detail": {"error_type": "authentication_error", "message": ...}}`, as the hosted Jev answers (measured) |
+| limits | 32k tokens per question, 64k per request; 262k with `TypeSafe-Danger-Zone-Long-Context: true` (and never past this server's `ctx`) |
+| headers | `x-typesafe-request-id` on every response |
+
+`tests/conformance/typesafe.sh [URL] [KEY]` checks a server against this with
+raw curl requests: 17 of 17 cases pass against `jevbase serve`, 20 of 20 with
+`api_keys` set (2026-11-21).
+
+The client (`jevbase::Client`, below) is configured as TypeSafe's SDKs are:
+`TYPESAFE_BASE_URL` (default `http://127.0.0.1:8097`), `TYPESAFE_API_KEY`,
+`TYPESAFE_DEFAULT_MODEL` (default `jev-latest`). It sends `model` with every
+request, retries `429` after `retry-after`, reads every documented error
+body, and reaches `https://` servers (the hosted Jev) through the `curl`
+program, the key passed on curl's standard input, never its command line.
 
 ## Settings
 
@@ -153,9 +184,10 @@ let req: jevbase::Request = serde_json::from_str(text)?;
 let eval = judge.evaluate(&req)?;                  // typed answers
 ```
 
-`judge.raw(&req)` gives the uncalibrated per-option log-probabilities, and
-`judge.engine.score_many(prefix, items)` reads any prompts and labels you
-render yourself.
+`judge.raw(&req, Limits::DEFAULT)` gives the uncalibrated per-option
+log-probabilities, and `judge.engine.score_many(prefix, items, limits)` reads
+any prompts and labels you render yourself (`jevbase::engine::Limits`:
+TypeSafe's context limits, `DEFAULT` or `LONG_CONTEXT`).
 
 A tool that only asks (a hook, an MCP server, a script) does not need the
 model in its own process: build the crate without its `engine` feature (no
@@ -167,9 +199,12 @@ jevbase = { package = "xks-jev-base", git = "https://github.com/Lasimeri/XKS_Jev
 ```
 
 ```rust
-let client = jevbase::Client::default();           // 127.0.0.1:8097
+let client = jevbase::Client::default();           // TYPESAFE_BASE_URL, else 127.0.0.1:8097
 let eval = client.evaluate(&req)?;                  // ClientError::Unreachable if no server
 ```
+
+The same code asks the hosted Jev with
+`TYPESAFE_BASE_URL=https://api.typesafe.ai` and `TYPESAFE_API_KEY` set.
 
 ## Oracle
 
@@ -185,6 +220,8 @@ readout, built against the same llama.cpp commit and CPU flags. Measured
 |---|---|
 | `jevbase ask`, readout exact | byte-identical to `xks`: every answer, every raw log-probability (17 digits), tokens, label mass |
 | `jevbase ask`, readout avx2 | 113 of 113 answers identical; largest raw log-probability difference 4.7e-14 |
+| `jevbase serve` over HTTP (the TypeSafe-conformant server) | byte-identical to `xks` |
+| the `jev` layout (answers are the option keys, every choice read as a trie) | byte-identical to `xks` |
 
 To build the oracle: in an Intel-Phi-Jev checkout, `make llama-shared` here
 first, then
@@ -195,16 +232,19 @@ first, then
 | path | what |
 |---|---|
 | `src/protocol.rs` | the System One request and response |
+| `src/validate.rs` | requests checked against TypeSafe's documented schema (422 / 400 bodies) |
+| `src/client.rs` | the client of any System One server (jevbase, xks, the hosted Jev) |
 | `src/prompt.rs` | questions rendered so their answer is the next token |
 | `src/engine.rs` | llama.cpp in process: prefill once, fork, read, trie |
 | `src/readout.rs` | log-sum-exp over the vocabulary: exact, or AVX2 + FMA |
 | `src/score.rs` | softmax, temperature, confidence, expected level |
 | `src/judge.rs` | a request in, typed answers out |
 | `src/config.rs` | every setting |
-| `src/server.rs` | `jevbase serve` (std only) |
+| `src/server.rs` | `jevbase serve`: the System One API as TypeSafe documents it (std only) |
 | `src/tui/` | the terminal interface (std and termios only, no TUI crate) |
 | `csrc/shim.c` | the flat C surface of llama.cpp the Rust side calls |
 | `tests/parity/` | the oracle requests, runner and comparison |
+| `tests/conformance/` | the TypeSafe conformance check (curl) |
 | `tests/bench/` | the tuning workload and script |
 | `examples/` | requests to try (Intel-Phi-Jev's examples) |
 

@@ -104,10 +104,27 @@ pub struct ModelInfo {
     pub load_seconds: f64,
 }
 
-/// TypeSafe's limits: the state and the longest question within 32k tokens,
-/// the whole request within 64k.
-pub const BRANCH_LIMIT: usize = 32_000;
-pub const REQUEST_LIMIT: usize = 64_000;
+/// TypeSafe's context limits (https://docs.typesafe.ai/models, "Context
+/// length"): the state plus any one question within the per-question
+/// context, the state plus all questions within the per-request context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    pub per_question: usize,
+    pub per_request: usize,
+}
+
+impl Limits {
+    /// The documented defaults: 32k per question, 64k per request.
+    pub const DEFAULT: Limits = Limits {
+        per_question: 32_000,
+        per_request: 64_000,
+    };
+    /// With `TypeSafe-Danger-Zone-Long-Context: true`: both 262k (2^18).
+    pub const LONG_CONTEXT: Limits = Limits {
+        per_question: 262_144,
+        per_request: 262_144,
+    };
+}
 
 /// One token of a decode plan: (token, position, sequence, output slot).
 type Step = (i32, i32, i32, Option<usize>);
@@ -233,11 +250,13 @@ impl Engine {
     }
 
     /// Read every (suffix, labels) item against the shared `prefix`: one
-    /// `Scored` per item, its log-probabilities in label order.
+    /// `Scored` per item, its log-probabilities in label order. A request
+    /// past `limits` (or this context) is refused before any work.
     pub fn score_many(
         &self,
         prefix: &Segs,
         items: &[(Segs, Vec<String>)],
+        limits: Limits,
     ) -> Result<Vec<Scored>, EngineError> {
         if items.is_empty() {
             return Ok(Vec::new());
@@ -255,6 +274,7 @@ impl Engine {
                 .collect::<Result<Vec<_>, _>>()?
         };
         let (prompts, shared) = self.prepare(prefix, items)?;
+        check_limits(&prompts, &cands, shared, self.n_ctx, limits)?;
         self.fork_and_read(&prompts, &cands, shared)
     }
 
@@ -397,7 +417,6 @@ impl Engine {
         shared: usize,
     ) -> Result<Vec<Scored>, EngineError> {
         let t0 = Instant::now();
-        check_limits(prompts, cands, shared, self.n_ctx)?;
         let mut g = self.inner.lock().expect("engine lock");
         let ctx = g.ctx;
         let session = &prompts[0][..shared];
@@ -678,13 +697,14 @@ fn fork_point(prompts: &[Vec<i32>]) -> usize {
 }
 
 /// Refuse, before any prefill, a request that cannot be read: past
-/// TypeSafe's limits, or a question that with its longest label does not
-/// fit the context.
+/// TypeSafe's context limits, or a question that with its longest label
+/// does not fit this server's context.
 fn check_limits(
     prompts: &[Vec<i32>],
     cands: &[Vec<Vec<i32>>],
     shared: usize,
     n_ctx: usize,
+    limits: Limits,
 ) -> Result<(), EngineError> {
     let longest = prompts
         .iter()
@@ -699,14 +719,16 @@ fn check_limits(
         .max()
         .unwrap_or(0);
     let request = shared + prompts.iter().map(|p| p.len() - shared).sum::<usize>();
-    if longest > BRANCH_LIMIT {
+    if longest > limits.per_question {
         return Err(EngineError::Rejected(format!(
-            "the state and a question come to {longest} tokens, past the {BRANCH_LIMIT} limit"
+            "the state and a question come to {longest} tokens, past the per-question context of {}",
+            limits.per_question
         )));
     }
-    if request > REQUEST_LIMIT {
+    if request > limits.per_request {
         return Err(EngineError::Rejected(format!(
-            "the request comes to {request} tokens, past the {REQUEST_LIMIT} limit"
+            "the request comes to {request} tokens, past the per-request context of {}",
+            limits.per_request
         )));
     }
     if longest > n_ctx {
@@ -726,18 +748,33 @@ mod tests {
     fn oversized_requests_are_refused_before_any_prefill() {
         let p = |n: usize| vec![1i32; n];
         let one = vec![vec![1i32]];
-        assert!(check_limits(&[p(100), p(120)], &[one.clone(), one.clone()], 90, 16384).is_ok());
-        let e = check_limits(&[p(20_000)], std::slice::from_ref(&one), 19_990, 16384).unwrap_err();
+        let d = Limits::DEFAULT;
+        assert!(check_limits(&[p(100), p(120)], &[one.clone(), one.clone()], 90, 16384, d).is_ok());
+        let e =
+            check_limits(&[p(20_000)], std::slice::from_ref(&one), 19_990, 16384, d).unwrap_err();
         assert!(matches!(e, EngineError::Rejected(ref m) if m.contains("ctx")));
-        assert!(check_limits(&[p(33_000)], std::slice::from_ref(&one), 32_990, 65_536).is_err());
+        assert!(check_limits(&[p(33_000)], std::slice::from_ref(&one), 32_990, 65_536, d).is_err());
         let many: Vec<_> = (0..5).map(|_| p(31_000)).collect();
         let cands: Vec<_> = (0..5).map(|_| one.clone()).collect();
         assert!(matches!(
-            check_limits(&many, &cands, 10_000, 131_072),
-            Err(EngineError::Rejected(ref m)) if m.contains("64000")
+            check_limits(&many, &cands, 10_000, 131_072, d),
+            Err(EngineError::Rejected(ref m)) if m.contains("per-request context of 64000")
         ));
-        let long = vec![vec![1i32; 10]];
-        assert!(check_limits(&[p(16_380)], &[long], 16_000, 16_384).is_err());
+        // Long context lifts both documented limits; this context still binds.
+        let long = Limits::LONG_CONTEXT;
+        assert!(
+            check_limits(
+                &[p(33_000)],
+                std::slice::from_ref(&one),
+                32_990,
+                65_536,
+                long
+            )
+            .is_ok()
+        );
+        assert!(check_limits(&many, &cands, 10_000, 131_072, long).is_ok());
+        let label = vec![vec![1i32; 10]];
+        assert!(check_limits(&[p(16_380)], &[label], 16_000, 16_384, d).is_err());
     }
 
     #[test]

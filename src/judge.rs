@@ -5,7 +5,7 @@
 
 use serde_json::{Map, Value, json};
 
-use crate::engine::{Engine, EngineError};
+use crate::engine::{Engine, EngineError, Limits};
 use crate::prompt::{self, Layout, MAX_OPTIONS, Template};
 use crate::protocol::{
     Answer, Evaluation, Question, Request, Usage, parse_questions, render_state,
@@ -52,8 +52,9 @@ impl Judge {
         Self { engine, cfg }
     }
 
-    /// Read every question and return its uncalibrated log-probabilities.
-    pub fn raw(&self, req: &Request) -> Result<Vec<RawQuestion>, EngineError> {
+    /// Read every question and return its uncalibrated log-probabilities;
+    /// a request past `limits` is refused before any work.
+    pub fn raw(&self, req: &Request, limits: Limits) -> Result<Vec<RawQuestion>, EngineError> {
         let questions = parse_questions(&req.questions).map_err(EngineError::Rejected)?;
         let prefix = prompt::prefix(
             self.cfg.layout,
@@ -104,7 +105,7 @@ impl Judge {
             }
             plans.push(plan);
         }
-        let mut scored = self.engine.score_many(&prefix, &items)?.into_iter();
+        let mut scored = self.engine.score_many(&prefix, &items, limits)?.into_iter();
         let mut out = Vec::with_capacity(plans.len());
         for plan in plans {
             let n = plan.keys.len();
@@ -139,9 +140,16 @@ impl Judge {
         Ok(out)
     }
 
-    /// Every answer with its whole distribution.
+    /// Every answer with its whole distribution, within TypeSafe's default
+    /// context limits.
     pub fn evaluate(&self, req: &Request) -> Result<Evaluation, EngineError> {
-        let raws = self.raw(req)?;
+        self.evaluate_with(req, Limits::DEFAULT)
+    }
+
+    /// `evaluate` within `limits` (`Limits::LONG_CONTEXT` for a request
+    /// sent with `TypeSafe-Danger-Zone-Long-Context: true`).
+    pub fn evaluate_with(&self, req: &Request, limits: Limits) -> Result<Evaluation, EngineError> {
+        let raws = self.raw(req, limits)?;
         let mut answers = Map::new();
         let mut usage = Usage::default();
         let mut debug = Vec::new();
