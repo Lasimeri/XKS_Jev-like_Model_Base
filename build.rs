@@ -3,13 +3,17 @@
 //! (`third_party/llama.cpp/build-cpu`, AVX2 + FMA kernels, OpenMP).
 //!
 //! `LLAMA_CPP_DIR` names another llama.cpp source tree and `LLAMA_BUILD_DIR`
-//! another static build of it; `CC` another C compiler.
+//! another static build of it; `CC` another C compiler. Without the `engine`
+//! feature (a client-only build) nothing is compiled or linked.
 
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
+    if env::var_os("CARGO_FEATURE_ENGINE").is_none() {
+        return;
+    }
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let src = env::var("LLAMA_CPP_DIR")
         .map(PathBuf::from)

@@ -15,6 +15,16 @@ path = "src/lib.rs"
 [[bin]]
 name = "jevbase"
 path = "src/main.rs"
+required-features = ["engine"]
+
+[features]
+default = ["engine"]
+# The model in process: llama.cpp (built by `make llama`) linked statically,
+# the judge, the HTTP server, the TUI and the `jevbase` binary. Without it,
+# `default-features = false`, the crate is the wire types, the prompt
+# rendering, the answer math and the HTTP client of a running `jevbase serve`:
+# std and serde only, no llama.cpp to build.
+engine = []
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

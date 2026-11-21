@@ -157,6 +157,20 @@ let eval = judge.evaluate(&req)?;                  // typed answers
 `judge.engine.score_many(prefix, items)` reads any prompts and labels you
 render yourself.
 
+A tool that only asks (a hook, an MCP server, a script) does not need the
+model in its own process: build the crate without its `engine` feature (no
+llama.cpp, std and serde only) and ask a running `jevbase serve`, which keeps
+the model and the cached state for every caller:
+
+```toml
+jevbase = { package = "xks-jev-base", git = "https://github.com/Lasimeri/XKS_Jev-like_Model_Base", default-features = false }
+```
+
+```rust
+let client = jevbase::Client::default();           // 127.0.0.1:8097
+let eval = client.evaluate(&req)?;                  // ClientError::Unreachable if no server
+```
+
 ## Oracle
 
 The method is Intel-Phi-Jev's; its `xks` is the oracle. The check
