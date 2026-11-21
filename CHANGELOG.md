@@ -49,6 +49,15 @@ AVX2 + FMA.
   -1`) panicked ("failed printing to stdout: Broken pipe") in 50 of 50 runs;
   it now ends quietly as `cat` does (SIGPIPE, 50 of 50). `serve` keeps
   SIGPIPE ignored, so a vanished peer stays an error on the write.
+- The binary carried 161 paths of the machine that built it (152 llama.cpp
+  source paths from its asserts' `__FILE__`, 9 paths into cargo's registry).
+  `make build` now maps them to relative ones (`-ffile-prefix-map` for
+  llama.cpp, `--remap-path-prefix` for rustc): 0 remain, and two clones of
+  the same commit built in folders of different path lengths give
+  byte-identical binaries (one SHA-256). A change of the Makefile now
+  rebuilds llama.cpp, so new flags always reach it. Oracle parity after the
+  rebuild: largest reported and raw log-probability difference 0 (464
+  compared).
 
 ### Known gaps
 

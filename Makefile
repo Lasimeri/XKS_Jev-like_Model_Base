@@ -14,6 +14,11 @@
 # BMI2): its matmul, quantized dot-product and attention kernels take their
 # AVX2/FMA paths, OpenMP threads, one static CPU backend linked into the
 # binary. Builds use at most JOBS (8) compile jobs.
+#
+# No path of the machine that builds it goes into the binary: llama.cpp's
+# __FILE__ strings (its asserts) and rustc's panic locations are rewritten to
+# paths relative to their source tree, so two checkouts of the same commit in
+# different folders build byte-identical binaries.
 
 LLAMA_REPO   ?= https://github.com/ggml-org/llama.cpp
 LLAMA_COMMIT ?= f5b9bd39b56c7a7839a9795a100b6a00b84ac961
@@ -22,8 +27,13 @@ JOBS         ?= 8
 PREFIX       ?= $(HOME)/.local
 XKS          ?= ../Intel-Phi-Jev/target/release/xks
 BIN          := target/release/jevbase
+CARGO_HOME   ?= $(HOME)/.cargo
+
+PATH_MAP     := -ffile-prefix-map=$(abspath $(LLAMA_DIR))=llama.cpp
+RUST_REMAP   := --remap-path-prefix=$(CARGO_HOME)=cargo --remap-path-prefix=$(CURDIR)=.
 
 LLAMA_FLAGS := -DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_C_FLAGS="$(PATH_MAP)" -DCMAKE_CXX_FLAGS="$(PATH_MAP)" \
 	-DGGML_NATIVE=OFF -DGGML_SSE42=ON -DGGML_AVX=ON -DGGML_AVX2=ON \
 	-DGGML_FMA=ON -DGGML_F16C=ON -DGGML_BMI2=ON \
 	-DGGML_AVX512=OFF -DGGML_AVX_VNNI=OFF \
@@ -41,7 +51,7 @@ SHIM_FLAGS := -std=c11 -O2 -fPIC -Wall -Wextra -Werror \
 all: build
 
 build: llama compile_commands.json
-	cargo build --release -j $(JOBS)
+	RUSTFLAGS="$$RUSTFLAGS $(RUST_REMAP)" cargo build --release -j $(JOBS)
 
 llama: $(LLAMA_DIR)/build-cpu/src/libllama.a
 
@@ -55,14 +65,16 @@ $(LLAMA_DIR)/.git/HEAD:
 	git -C $(LLAMA_DIR) checkout -q FETCH_HEAD
 	test "$$(git -C $(LLAMA_DIR) rev-parse HEAD)" = "$(LLAMA_COMMIT)"
 
-$(LLAMA_DIR)/build-cpu/src/libllama.a: | $(LLAMA_DIR)/.git/HEAD
+$(LLAMA_DIR)/build-cpu/src/libllama.a: Makefile | $(LLAMA_DIR)/.git/HEAD
 	cmake -S $(LLAMA_DIR) -B $(LLAMA_DIR)/build-cpu $(LLAMA_FLAGS) \
 		-DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 	cmake --build $(LLAMA_DIR)/build-cpu -j $(JOBS) --target llama
+	touch $@
 
-$(LLAMA_DIR)/build-shared/bin/libllama.so: | $(LLAMA_DIR)/.git/HEAD
+$(LLAMA_DIR)/build-shared/bin/libllama.so: Makefile | $(LLAMA_DIR)/.git/HEAD
 	cmake -S $(LLAMA_DIR) -B $(LLAMA_DIR)/build-shared $(LLAMA_FLAGS) -DBUILD_SHARED_LIBS=ON
 	cmake --build $(LLAMA_DIR)/build-shared -j $(JOBS) --target llama
+	touch $@
 
 # For clangd: the shim's real compile command (build.rs uses the same flags).
 compile_commands.json: Makefile

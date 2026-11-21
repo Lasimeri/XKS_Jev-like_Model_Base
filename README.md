@@ -82,6 +82,11 @@ make run        # the terminal interface (or ./target/release/jevbase)
 The default model is `~/models/Qwen3.8-2B-Distill/Qwen3.8-2B-Q8_0.gguf`; any
 GGUF llama.cpp loads works (`-m FILE`, or `model` in `jevbase.conf`).
 
+`make` uses at most 8 compile jobs (`JOBS=N` to change it) and writes no path
+of the machine that builds it into the binary, so two clones of the same
+commit in different folders build byte-identical binaries (checked for
+0.1.0-rc.1).
+
 ```sh
 jevbase ask examples/query.json              # one request, its answers as JSON
 jevbase ask examples/dev_tasks.jsonl         # one request per line
