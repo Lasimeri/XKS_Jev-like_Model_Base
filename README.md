@@ -1,14 +1,19 @@
 # XKS_Jev-like_Model_Base
 
-Typed judgments (**noul** yes/no, **choice** one of N, **score** a level of
-2 to 10) read from a local LLM's next-token distribution, on the CPU. A
-small base to start other projects from: one Rust crate, one binary
-(`jevbase`), llama.cpp linked statically and built for AVX2 + FMA.
+Typed judgments (**noul** yes/no, **choice** one of up to 255 options,
+**score** a level on an ordered scale of up to 10) read from a local LLM's
+next-token distribution, on the CPU. A small base to start other projects
+from: one Rust crate, one binary (`jevbase`), llama.cpp linked statically and
+built for AVX2 + FMA, serving TypeSafe's System One API as its documentation
+specifies it.
 
 It is a simpler re-implementation of [Intel-Phi-Jev](https://github.com/Lasimeri/Intel-Phi-Jev)'s
 `xks`, using **the same prediction method**, checked against `xks` as the
 oracle: on the same 32 requests (113 decisions) both give byte-identical
 output (see [Oracle](#oracle)).
+
+**Status: 0.1.0-rc.1, the first release candidate.** What is verified, and
+the known gaps, are in [CHANGELOG.md](CHANGELOG.md).
 
 ## How a decision is read
 

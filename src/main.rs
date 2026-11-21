@@ -140,8 +140,31 @@ fn main() -> ExitCode {
     }
 }
 
+/// Give SIGPIPE back its default action, so a command whose standard output
+/// is closed by its reader (`jevbase info | head -2`) ends quietly, as `cat`
+/// does. The Rust runtime ignores SIGPIPE, which turns that closed pipe into
+/// a panic inside `println!`. Not for `serve`: its sockets must report a
+/// vanished peer as an error on the write, never end the process.
+#[cfg(unix)]
+fn sigpipe_default() {
+    unsafe extern "C" {
+        fn signal(signum: i32, handler: usize) -> usize;
+    }
+    const SIGPIPE: i32 = 13;
+    const SIG_DFL: usize = 0;
+    // SAFETY: setting the default action installs no handler, so nothing
+    // can run in signal context; the previous action is not needed.
+    unsafe { signal(SIGPIPE, SIG_DFL) };
+}
+
+#[cfg(not(unix))]
+fn sigpipe_default() {}
+
 fn run(argv: &[String]) -> Result<ExitCode, String> {
     let cli = parse(argv)?;
+    if cli.command != "serve" {
+        sigpipe_default();
+    }
     if cli.command == "help" {
         print!("{HELP}");
         return Ok(ExitCode::SUCCESS);
